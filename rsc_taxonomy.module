@@ -23,15 +23,15 @@ function rsc_taxonomy_menu() {
   $items = array();
   
   $items['rsc_taxonomy_menu/%'] = array(
-    'page callback' => 'rsc_taxonomy_get_menu_markup',
-    'page arguments' => array(1),
-    'type' => MENU_CALLBACK,
-    'access callback' => TRUE, // TODO: write an access callback. how will access checks be handled?
-    'delivery callback' => 'rsc_taxonomy_menu_callback',
+    'page callback'     => 'rsc_taxonomy_get_menu_markup',
+    'page arguments'    => array(1),
+    'type'              => MENU_CALLBACK,
+    'access callback'   => 'rsc_taxonomy_menu_access_callback',
+    'access arguments'  => array(1),
+    'delivery callback' => 'rsc_taxonomy_menu_delivery_callback',
   );
 
-  //administrative menu
-  $items['admin/config/development/rsc-taxonomy'] = array(
+  $items['admin/structure/rsc-taxonomy'] = array(
     'title'            => 'RSC Taxonomy',
     'description'      => t("Configure RSC taxonomy menus."),
     'page callback'    => 'drupal_get_form',
@@ -43,8 +43,12 @@ function rsc_taxonomy_menu() {
   return $items;
 }
 
+
 /**
  * Implements hook_menu_alter().
+ * https://api.drupal.org/api/drupal/modules%21system%21system.api.php/function/hook_menu_alter/7
+ * @param $items
+ * Associative array of menu router definitions returned from hook_menu().
  */
 function rsc_taxonomy_menu_alter(&$items) {
 
@@ -63,32 +67,98 @@ function rsc_taxonomy_menu_alter(&$items) {
 }
 
 
+/**
+ * A form builder function to be called by drupal_get_form to build the admin page.
+ * @return array
+ * A form array
+ */
 function rsc_taxonomy_admin_form() {
   $form = array();
+  $variable_name = "rsc_taxonomy_settings";
 
-  // TODO: select which vocabularies are registered as menus
-  // TODO: select which roles may see which menus?
-  // TODO: select which menus to rebuild
+  // Get a list of vocabularies keyed by vid
+  $vocabs = taxonomy_get_vocabularies();
+  $vocab_options = array();
+  foreach($vocabs as $vid => $vocab) {
+    $vocab_options[$vid] = $vocab->name;
+  }
 
-  $form['actions']['rebuild'] = array(
-    '#type' => 'button',
-    '#value' => t('Rebuild selected menus'),
+  // Get the current settings, if any
+  $default_settings = array(
+    'menus_enabled' => array(),
+  );
+  $settings = variable_get($variable_name, $default_settings);
+
+  // Get a list of enabled vocabularies
+  $vocabs_enabled = array();
+  foreach ($vocab_options as $key => $value) {
+    if (isset($settings['menus_enabled'][$key]) && $settings['menus_enabled'][$key]) {
+      $vocabs_enabled[$key] = $value;
+    }
+  }
+
+  // build the form
+
+  $form['menus_enabled'] = array(
+    '#type'          => 'checkboxes',
+    '#required'      => FALSE,
+    '#multiple'      => TRUE,
+    '#title'         => t('Enable vocabulary menus'),
+    '#description'   => t('Enable creating menu blocks for these vocabularies. This does not use the Drupal menu system, but our own. NOTE: Until access checks are implemented, this exposes all taxonomy terms in the selected vocabularies to the public.'),
+    '#default_value' => $settings['menus_enabled'],
+    '#options'       => $vocab_options,
   );
 
-  return system_settings_form($form);
+  // TODO: select which roles may see which vocabularies? Separate module for that?
+
+  if (!empty($vocabs_enabled)) {
+
+    $form['menus_rebuild'] = array(
+      '#type' => 'checkboxes',
+      '#required' => FALSE,
+      '#multiple' => TRUE,
+      '#title' => t('Rebuild vocabulary menus'),
+      '#description' => t('Select the menus to clear their caches and rebuild them.'),
+      '#default_value' => array(),
+      '#options' => $vocabs_enabled,
+    );
+
+    $form['actions']['rebuild'] = array(
+      '#type'   => 'submit',
+      '#value'  => t('Rebuild selected menus'),
+      '#submit' => array('rsc_taxonomy_admin_form_submit_rebuild'),
+      ''
+    );
+
+  }
+
+  $form['actions']['save'] = array(
+    '#type'   => 'submit',
+    '#value'  => t('Save'),
+  );
+
+  return $form;
 }
 
 function rsc_taxonomy_admin_form_submit($form, &$form_state) {
-
+  variable_set("rsc_taxonomy_settings", array(
+    'menus_enabled' => $form_state['values']['menus_enabled'],
+  ));
 }
 
-function rsc_taxonomy_admin_form_validate($form, &$form_state) {
-  // TODO: for each selected menu:
-//  if ($form_state['triggering_element']['#value'] == t('Rebuild selected menus')) {
-//    cache_clear_all("rsc_taxonomy_vocab_tree_2",'cache');
-//    cache_clear_all("rsc_taxonomy_menu",'cache');
-//    rsc_taxonomy_get_menu_markup(); // regenerate markup
-//  }
+function rsc_taxonomy_admin_form_submit_rebuild($form, &$form_state) {
+  foreach ($form_state['values']['menus_rebuild'] as $vid => $must_rebuild) {
+    if ($must_rebuild) {
+
+      // clear caches
+      cache_clear_all("rsc_taxonomy_vocab_tree_$vid",'cache');
+      cache_clear_all("rsc_taxonomy_menu_markup_$vid",'cache');
+
+      // regenerate markup
+      rsc_taxonomy_get_menu_markup($vid);
+
+    }
+  }
 }
 
 
@@ -101,12 +171,27 @@ function rsc_taxonomy_admin_form_validate($form, &$form_state) {
 function rsc_taxonomy_block_info() {
   $blocks = array();
 
-  // TODO: for each selected vocabulary:
-//  $blocks["menu_$vid"] = array(
-//    'info'  => 'Hierarchical menu based on vocabulary ',
-//    'cache' => DRUPAL_NO_CACHE, // we cache it manually, and refresh when something changes
-//  );
-  
+  // Get the module settings
+  $settings = variable_get("rsc_taxonomy_settings", null);
+  if (!empty($settings['menus_enabled'])) {
+
+    // For every enabled vocabulary
+    foreach ($settings['menus_enabled'] as $vid => $enabled) {
+      if ($enabled) {
+
+        // Define a menu block
+        $blocks["menu_$vid"] = array(
+          'info'  => t('RSC Taxonomy menu: "@vocab" (vid=@vid)', array(
+            '@vocab' => taxonomy_vocabulary_load($vid)->name,
+            '@vid'   => $vid
+          )),
+          'cache' => DRUPAL_NO_CACHE, // we cache and refresh it manually
+        );
+
+      }
+    }
+  }
+
   return $blocks;
 }
 
@@ -116,6 +201,11 @@ function rsc_taxonomy_block_info() {
  * https://api.drupal.org/api/drupal/modules!block!block.api.php/function/hook_block_view/7
  *
  * Serves the content for menu blocks
+ * @param $delta
+ * The identifier for which block to render.
+ * One of the keys of the $block array in rsc_taxonomy_block_info.
+ * @return array
+ * An array containing the block title and content.
  */
 function rsc_taxonomy_block_view($delta) {
   $block = array();
@@ -140,6 +230,15 @@ function rsc_taxonomy_block_view($delta) {
 
 /**
  * Return the taxonomy tree (possible from cache) for a specific vocabulary
+ * @param $vid
+ * Vocabulary id for which to load the tree
+ * @return array
+ * Nested array of taxonomy terms.
+ * Array keys are the term ids of the top-level terms.
+ * Array values are arrays containing the term properties,
+ * as well as two other arrays:
+ * parents: An indexed array of tids of terms that are this term's parents.
+ * children: An array just like the top-level array (i.e. recursive).
  */
 function rsc_taxonomy_get_vocab_tree($vid) {
   
@@ -193,11 +292,18 @@ function rsc_taxonomy_get_vocab_tree($vid) {
 //     drupal_set_message("Hit cache. Reusing tree.");
     $tree = $tree->data;
   }
-  
+
   return $tree;
 }
 
 
+/**
+ * Get the markup for a taxonomy vocabulary menu
+ * @param $vid
+ * The vocabulary id for which to build the menu
+ * @return string
+ * Markup for the menu
+ */
 function rsc_taxonomy_get_menu_markup($vid) {
   $cid = "rsc_taxonomy_menu_markup_$vid";
   $markup = cache_get($cid);
@@ -207,7 +313,7 @@ function rsc_taxonomy_get_menu_markup($vid) {
     $tree = rsc_taxonomy_get_vocab_tree($vid);
   
 //     drupal_set_message("Missed cache. Recreating markup.");
-  
+
     function get_items($tree) {
       $items = array();
       foreach($tree as $tid => &$term) {
@@ -227,7 +333,7 @@ function rsc_taxonomy_get_menu_markup($vid) {
       '#theme'      => 'item_list',
       '#items'      => get_items($tree),
       '#attributes' => array(
-        'class' => array('rsc-taxonomy-menu'),
+        'class' => array('nice-menu'), // TODO: change to something else (like rsc-taxonomy-menu) here and in themes
       ),
     );
   
@@ -245,8 +351,30 @@ function rsc_taxonomy_get_menu_markup($vid) {
 }
 
 
-function rsc_taxonomy_menu_callback($page_callback_result) {
+/**
+ * Custom minimal (fast) delivery callback for ajax requests
+ * @param $page_callback_result
+ * The result to return to the browser
+ */
+function rsc_taxonomy_menu_delivery_callback($page_callback_result) {
   print $page_callback_result;
   drupal_exit();
+}
+
+
+/**
+ * Access callback for rsc taxonomy menu requests
+ * @param $vid
+ * The vocabulary id for which to check access
+ * @return bool
+ * Whether to allow access or not
+ */
+function rsc_taxonomy_menu_access_callback($vid) {
+  // TODO: how will access checks be handled?
+  // for now, allow access to the menu for everyone if the vocabulary is enabled in admin form
+
+  $settings = variable_get("rsc_taxonomy_settings", NULL);
+  return (isset($settings['menus_enabled'][$vid]) && $settings['menus_enabled'][$vid]);
+
 }
 

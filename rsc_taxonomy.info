@@ -5,4 +5,4 @@ package = "RSC"
 
 scripts[] = rsc_taxonomy.js
 
-configure = admin/config/development/rsc-taxonomy
+configure = admin/structure/rsc-taxonomy

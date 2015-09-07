@@ -18,7 +18,7 @@ Drupal.behaviors.rsc_taxonomy = {
       var vid = menu_div.attr("vid");
 
       // Determine the url to load the menu from if necessary
-      var menu_url = "/rsc_taxonomy_menu/" + vid;
+      var menu_url = Drupal.settings.basePath + "/rsc_taxonomy_menu/" + vid;
 
       // Determine what we call our stuff in localstorage
       var markup_id = "rsc_taxonomy_menu_markup_" + vid;
@@ -42,9 +42,9 @@ Drupal.behaviors.rsc_taxonomy = {
         var modified = localStorage[modified_id];
 
         if (markup && modified && (menu_div.attr("modified") == modified)) {
-          // alert("cache hit");
+           //alert("cache hit");
         } else {
-          // alert("cache miss");
+           //alert("cache miss");
 
           // request the menu from the server using ajax
           $.ajax({
