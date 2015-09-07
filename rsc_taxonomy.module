@@ -115,7 +115,7 @@ function rsc_taxonomy_block_info() {
  * Implements hook_block_view($delta = '').
  * https://api.drupal.org/api/drupal/modules!block!block.api.php/function/hook_block_view/7
  *
- * Serves the content for custom blocks
+ * Serves the content for menu blocks
  */
 function rsc_taxonomy_block_view($delta) {
   $block = array();
