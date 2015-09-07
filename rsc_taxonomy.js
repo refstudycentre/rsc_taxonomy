@@ -8,54 +8,71 @@
 Drupal.behaviors.rsc_taxonomy = {
   attach: function(context, settings) {
 
-    // find the library menu on the page
-    var div = $("#block-rsc-taxonomy-library-menu > div.content");
-    div.html("Loading ...");
+    // find the menus on the page (assuming all blocks made by this module are menus)
+    $(".block-rsc-taxonomy > div.content").each(function(index){
 
-    // check if localstorage is supported by this browser
-    var support = false;
-    try {
-      if ('localStorage' in window && window['localStorage'] !== null) {
-        support = true
-      }
-    } catch (e) {}
+      // Get the current menu's outer div
+      var menu_div = $(this);
 
-    // if localstorage is supported, try to load the menu from the localstorage
-    if (support) {
-      
-      var markup = localStorage["rsc_taxonomy_library_menu_markup"];
-      var modified = localStorage["rsc_taxonomy_library_menu_modified"];
+      // Get the vid of the vocabulary that this menu is based on
+      var vid = menu_div.attr("vid");
 
-      if (markup && modified && (div.attr("modified") == modified)) {
-        // alert("cache hit");
-      } else {
-        // alert("cache miss");
+      // Determine the url to load the menu from if necessary
+      var menu_url = "/rsc_taxonomy_menu/" + vid;
 
-        // request the menu from the server using ajax
-        $.ajax({
-          url: "/rsc_taxonomy_library_menu",
-          type: 'get',
-          dataType: 'html',
-          async: false,
-          success: function(data) {
+      // Determine what we call our stuff in localstorage
+      var markup_id = "rsc_taxonomy_menu_markup_" + vid;
+      var modified_id = "rsc_taxonomy_menu_modified_" + vid;
+
+      // Show that something is happening!
+      menu_div.html("Loading ...");
+
+      // check if localstorage is supported by this browser
+      var support = false;
+      try {
+        if ('localStorage' in window && window['localStorage'] !== null) {
+          support = true
+        }
+      } catch (e) {}
+
+      // if localstorage is supported, try to load the menu from the localstorage
+      if (support) {
+
+        var markup = localStorage[markup_id];
+        var modified = localStorage[modified_id];
+
+        if (markup && modified && (menu_div.attr("modified") == modified)) {
+          // alert("cache hit");
+        } else {
+          // alert("cache miss");
+
+          // request the menu from the server using ajax
+          $.ajax({
+            url: menu_url,
+            type: 'get',
+            dataType: 'html',
+            async: false,
+            success: function(data) {
               markup = data;
-          } 
-        });
+            }
+          });
 
-        // save the menu to localstorage for next time
-        localStorage["rsc_taxonomy_library_menu_markup"] = markup;
-        localStorage["rsc_taxonomy_library_menu_modified"] = div.attr("modified");
+          // save the menu to localstorage for next time
+          localStorage[markup_id] = markup;
+          localStorage[modified_id] = menu_div.attr("modified");
 
+        }
+
+        // add the menu to the DOM
+        menu_div.html(markup);
+
+      } else {
+        // localstorage is not supported. Just get the menu from the server.
+        menu_div.load(menu_url);
       }
 
-      // add the menu to the DOM
-      div.html(markup);
-      
-    } else {
-      // localstorage is not supported. Just get the menu from the server.
-      div.load("/rsc_taxonomy_library_menu");
-    }
-      
+    })
+
   }
 };
 
