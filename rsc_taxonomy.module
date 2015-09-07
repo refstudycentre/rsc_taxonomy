@@ -2,6 +2,20 @@
 
 
 /**
+ * Implements hook_perm().
+ */
+function rsc_taxonomy_permission() {
+  $permissions = array();
+
+  $permissions['administer rsc_taxonomy'] = array(
+    'title' => t('Configure RSC taxonomy settings and menus')
+  );
+
+  return $permissions;
+}
+
+
+/**
  * Implementation of hook_menu().
  * https://api.drupal.org/api/drupal/modules%21system%21system.api.php/function/hook_menu/7
  */
@@ -22,10 +36,30 @@ function rsc_taxonomy_menu() {
     'description'      => t("Configure RSC taxonomy menus."),
     'page callback'    => 'drupal_get_form',
     'page arguments'   => array('rsc_taxonomy_admin_form'),
-    'access arguments' => array('administer rsc_custom_admin'),
+    'access arguments' => array('administer rsc_taxonomy'),
+    'file'             => 'rsc_taxonomy.admin.inc'
   );
 
   return $items;
+}
+
+/**
+ * Implements hook_menu_alter().
+ */
+function rsc_taxonomy_menu_alter(&$items) {
+
+  // totally replace the taxonomy term page.
+  $items['taxonomy/term/%taxonomy_term'] = array(
+    'title'            => 'Taxonomy term',
+    'title callback'   => 'taxonomy_term_title',
+    'title arguments'  => array(2),
+    'page callback'    => 'rsc_taxonomy_term_page',
+    'page arguments'   => array(2),
+    'access arguments' => array('access content'),
+    'file'             => 'rsc_taxonomy.pages.inc',
+    'file path'        => drupal_get_path('module', 'rsc_taxonomy'),
+  );
+
 }
 
 
