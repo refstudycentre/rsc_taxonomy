@@ -1,0 +1,218 @@
+<?php
+
+
+/**
+ * Implementation of hook_menu().
+ * https://api.drupal.org/api/drupal/modules%21system%21system.api.php/function/hook_menu/7
+ */
+function rsc_taxonomy_menu() {
+  $items = array();
+  
+  $items['rsc_taxonomy_menu/%'] = array(
+    'page callback' => 'rsc_taxonomy_get_menu_markup',
+    'page arguments' => array(1),
+    'type' => MENU_CALLBACK,
+    'access callback' => TRUE, // TODO: write an access callback. how will access checks be handled?
+    'delivery callback' => 'rsc_taxonomy_menu_callback',
+  );
+
+  //administrative menu
+  $items['admin/config/development/rsc-taxonomy'] = array(
+    'title'            => 'RSC Taxonomy',
+    'description'      => t("Configure RSC taxonomy menus."),
+    'page callback'    => 'drupal_get_form',
+    'page arguments'   => array('rsc_taxonomy_admin_form'),
+    'access arguments' => array('administer rsc_custom_admin'),
+  );
+
+  return $items;
+}
+
+
+function rsc_taxonomy_admin_form() {
+  $form = array();
+
+  // TODO: select which vocabularies are registered as menus
+  // TODO: select which roles may see which menus?
+  // TODO: select which menus to rebuild
+
+  $form['actions']['rebuild'] = array(
+    '#type' => 'button',
+    '#value' => t('Rebuild selected menus'),
+  );
+
+  return system_settings_form($form);
+}
+
+function rsc_taxonomy_admin_form_submit($form, &$form_state) {
+
+}
+
+function rsc_taxonomy_admin_form_validate($form, &$form_state) {
+  // TODO: for each selected menu:
+//  if ($form_state['triggering_element']['#value'] == t('Rebuild selected menus')) {
+//    cache_clear_all("rsc_taxonomy_vocab_tree_2",'cache');
+//    cache_clear_all("rsc_taxonomy_menu",'cache');
+//    rsc_taxonomy_get_menu_markup(); // regenerate markup
+//  }
+}
+
+
+/**
+ * Implements hook_block_info().
+ * https://api.drupal.org/api/drupal/modules!block!block.api.php/function/hook_block_info/7
+ *
+ * Defines a menu block for each selected vocabulary
+ */
+function rsc_taxonomy_block_info() {
+  $blocks = array();
+
+  // TODO: for each selected vocabulary:
+//  $blocks["menu_$vid"] = array(
+//    'info'  => 'Hierarchical menu based on vocabulary ',
+//    'cache' => DRUPAL_NO_CACHE, // we cache it manually, and refresh when something changes
+//  );
+  
+  return $blocks;
+}
+
+
+/**
+ * Implements hook_block_view($delta = '').
+ * https://api.drupal.org/api/drupal/modules!block!block.api.php/function/hook_block_view/7
+ *
+ * Serves the content for custom blocks
+ */
+function rsc_taxonomy_block_view($delta) {
+  $block = array();
+
+  $parts = explode('_', $delta, 2);
+  if ('menu' == $parts[0]) {
+    $vid = (int) ($parts[1]);
+
+    // TODO: check if menu is enabled for this vocabulary
+    if (true) {
+
+      $block['subject'] = null;
+      $modified = variable_get("rsc_taxonomy_menu_modified_$vid", 0);
+      $block['content'] = "<div class='content' vid='$vid' modified='$modified'><noscript>This menu requires Javascript.</noscript></div>";
+
+    }
+  }
+
+  return $block;
+}
+
+
+/**
+ * Return the taxonomy tree (possible from cache) for a specific vocabulary
+ */
+function rsc_taxonomy_get_vocab_tree($vid) {
+  
+  $tree = cache_get("rsc_taxonomy_vocab_tree_$vid");
+  if (empty($tree)) { // if the data is not available from cache
+  
+//     drupal_set_message("Missed cache. Rebuilding tree.");
+  
+    $terms = taxonomy_get_tree($vid); // TODO: compare performance to simple sql query (combine with query below)
+    $tree = array();
+  
+    // sort the array by weight while it is still flat // TODO: compare performance to quicksort
+    function weightsort($a,$b) {
+      return ($a->weight > $b->weight);
+    }
+    usort($terms,'weightsort');
+  
+    foreach($terms as &$term) {
+  
+      // key all terms by tid
+      $tree[$term->tid] = &$term;
+  
+      // count nodes that fall directly under each term
+      $term->nodes = db_query("SELECT count(nid) as num FROM taxonomy_index WHERE tid = :tid",array(':tid'=>$term->tid))->fetchField();
+  
+      // create array to contain children of each term
+      $term->children = array();
+  
+    }
+  
+    // let each term be referenced by it's parent
+    foreach($tree as $tid => &$term) {
+      $parent_tid = $term->parents[0];
+      if ($parent_tid) {
+        $tree[$parent_tid]->children[$tid] = &$term;
+      }
+    }
+  
+    // unset terms in top level of array that have parents
+    foreach($tree as $tid => &$term) {
+      $parent_tid = $term->parents[0];
+      if ($parent_tid) {
+        unset($tree[$tid]); // unset term in base of array
+      }
+    }
+  
+    // cache the tree
+    cache_set("rsc_taxonomy_vocab_tree_$vid", $tree, 'cache', CACHE_PERMANENT);
+  
+  } else {
+//     drupal_set_message("Hit cache. Reusing tree.");
+    $tree = $tree->data;
+  }
+  
+  return $tree;
+}
+
+
+function rsc_taxonomy_get_menu_markup($vid) {
+  $cid = "rsc_taxonomy_menu_markup_$vid";
+  $markup = cache_get($cid);
+  
+  if (empty($markup)) {
+  
+    $tree = rsc_taxonomy_get_vocab_tree(2);
+  
+//     drupal_set_message("Missed cache. Recreating markup.");
+  
+    function get_items($tree) {
+      $items = array();
+      foreach($tree as $tid => &$term) {
+        $children = get_items($term->children);
+        $items[$tid] = array(
+          'data'       => l($term->name,"taxonomy/term/{$term->tid}"),
+          'children'   => $children,
+          );
+        if (!empty($children)) {
+          $items[$tid]['class'][] = 'menuparent';
+        }
+      }
+      return $items;
+    }
+  
+    $list = array(
+      '#theme'      => 'item_list',
+      '#items'      => get_items($tree),
+      '#attributes' => array(
+        'class' => array('nice-menu'), // TODO: call this something else, both here and in the theme?
+      ),
+    );
+  
+    $markup = render($list);
+  
+    cache_set($cid, $markup, 'cache', CACHE_PERMANENT); // cache the markup
+    variable_set("rsc_taxonomy_menu_modified_$vid",time());  // set modification time
+  
+  } else {
+    //         drupal_set_message("Hit cache. Reusing markup.");
+    $markup = &$markup->data;
+  }
+  
+  return $markup;
+}
+
+
+function rsc_taxonomy_menu_callback($page_callback_result) {
+  print $page_callback_result;
+  drupal_exit();
+}
+

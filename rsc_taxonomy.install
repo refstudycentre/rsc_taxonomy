@@ -1,0 +1,17 @@
+<?php
+
+
+/**
+ * Implements hook_install().
+ */
+function rsc_taxonomy_install() {
+
+}
+
+
+/**
+ * Implements hook_uninstall().
+ */
+function rsc_taxonomy_uninstall() {
+
+}

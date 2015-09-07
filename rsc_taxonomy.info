@@ -1,0 +1,6 @@
+name = RSC Taxonomy
+description = Make 'browse pages' and menus from taxonomy vocabularies and replace Drupal's taxonomy page
+core = 7.x
+package = "RSC"
+
+scripts[] = rsc_taxonomy.js
