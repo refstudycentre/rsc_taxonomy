@@ -1,12 +1,18 @@
 <?php
 
+
 /**
- * Menu callback; displays all nodes associated with a term.
+ * Displays all nodes associated with a term.
  */
 function rsc_taxonomy_term_page($term) {
-  drupal_set_title($term->name); // prevent menu from setting different title
+
+  // prevent menu from setting different title
+  drupal_set_title($term->name);
+
+  // Add RSS feed
   drupal_add_feed('taxonomy/term/' . $term->tid . '/feed', 'RSS - ' . $term->name);
 
+  // TODO: replace this view with rsc_taxonomy_get_menu_markup ?
   // TODO: cache subs & nids!!
   $subs = rsc_taxonomy_subs_count(taxonomy_get_tree($term->vid, $term->tid, 1));
   $fname = variable_get('rsc_taxonomy_sort_enable_field', NULL);
@@ -194,3 +200,4 @@ function rsc_taxonomy_nids($tid, $pager = TRUE, $limit = FALSE, $weighten_nids =
   }
   return $nids;
 }
+

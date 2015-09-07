@@ -204,7 +204,7 @@ function rsc_taxonomy_get_menu_markup($vid) {
   
   if (empty($markup)) {
   
-    $tree = rsc_taxonomy_get_vocab_tree(2);
+    $tree = rsc_taxonomy_get_vocab_tree($vid);
   
 //     drupal_set_message("Missed cache. Recreating markup.");
   
@@ -227,7 +227,7 @@ function rsc_taxonomy_get_menu_markup($vid) {
       '#theme'      => 'item_list',
       '#items'      => get_items($tree),
       '#attributes' => array(
-        'class' => array('nice-menu'), // TODO: call this something else, both here and in the theme?
+        'class' => array('rsc-taxonomy-menu'),
       ),
     );
   
