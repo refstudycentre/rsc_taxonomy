@@ -37,7 +37,6 @@ function rsc_taxonomy_menu() {
     'page callback'    => 'drupal_get_form',
     'page arguments'   => array('rsc_taxonomy_admin_form'),
     'access arguments' => array('administer rsc_taxonomy'),
-    'file'             => 'rsc_taxonomy.admin.inc'
   );
 
   return $items;
@@ -80,12 +79,15 @@ function rsc_taxonomy_admin_form() {
   $vocabs = taxonomy_get_vocabularies();
   $vocab_options = array();
   foreach($vocabs as $vid => $vocab) {
-    $vocab_options[$vid] = $vocab->name;
+    $vocab_options[$vid] = "{$vocab->name} (vid={$vid})";
   }
 
   // Get the current settings, if any
   $default_settings = array(
-    'menus_enabled' => array(),
+    'menus_enabled'     => array(),
+    'sort_enable_field' => NULL,
+    'sort_weight_field' => NULL,
+    'nodes_per_page'    => 10,
   );
   $settings = variable_get($variable_name, $default_settings);
 
@@ -94,6 +96,23 @@ function rsc_taxonomy_admin_form() {
   foreach ($vocab_options as $key => $value) {
     if (isset($settings['menus_enabled'][$key]) && $settings['menus_enabled'][$key]) {
       $vocabs_enabled[$key] = $value;
+    }
+  }
+
+  /*
+   * Construct two lists:
+   * - All fields that have instances on taxonomy terms
+   * - All fields that have instances on nodes
+   */
+  $fieldmap = field_info_field_map();
+  $taxonomy_fields = array(NULL=>"--none--",);
+  $node_fields = array(NULL=>"--none--",);
+  foreach($fieldmap as $fieldname => $fieldinfo) {
+    if (!empty($fieldinfo['bundles']['taxonomy_term'])) {
+      $taxonomy_fields[$fieldname] = $fieldname;
+    }
+    if (!empty($fieldinfo['bundles']['node'])) {
+      $node_fields[$fieldname] = $fieldname;
     }
   }
 
@@ -111,6 +130,42 @@ function rsc_taxonomy_admin_form() {
 
   // TODO: select which roles may see which vocabularies? Separate module for that?
 
+  $form['sort_enable_field'] = array(
+    '#title'         => t('Field used to enable/disable sorting on taxonomy pages'),
+    '#description'   => t('The should be a field instance on taxonomy terms. The field value should evaluate to TRUE for taxonomy terms that should have sorted node listings.'),
+    '#type'          => 'select',
+    '#multiple'      => FALSE,
+    '#required'      => FALSE,
+    '#options'       => $taxonomy_fields,
+    '#default_value' => $settings['sort_enable_field'],
+  );
+
+  $form['sort_weight_field'] = array(
+    '#title'         => t('Field used for node weight on sorted taxonomy pages'),
+    '#description'   => t('This should be a field instance on nodes. The field value is used to sort the nodes, if node sorting is enabled for the term being listed.'),
+    '#type'          => 'select',
+    '#multiple'      => FALSE,
+    '#required'      => FALSE,
+    '#options'       => $node_fields,
+    '#default_value' => $settings['sort_weight_field'],
+  );
+
+  $form['nodes_per_page'] = array(
+    '#title'            => t('Number of nodes per page on taxonomy term pages'),
+    '#description'      => t('If there are more nodes than this, they will be paginated.'),
+    '#type'             => 'textfield',
+    '#size'             => 4,
+    '#multiple'         => FALSE,
+    '#required'         => TRUE,
+    '#default_value'    => $settings['nodes_per_page'],
+    '#element_validate' => array('rsc_taxonomy_validate_npp'),
+  );
+
+  $form['save'] = array(
+    '#type'   => 'submit',
+    '#value'  => t('Save'),
+  );
+
   if (!empty($vocabs_enabled)) {
 
     $form['menus_rebuild'] = array(
@@ -123,7 +178,7 @@ function rsc_taxonomy_admin_form() {
       '#options' => $vocabs_enabled,
     );
 
-    $form['actions']['rebuild'] = array(
+    $form['rebuild'] = array(
       '#type'   => 'submit',
       '#value'  => t('Rebuild selected menus'),
       '#submit' => array('rsc_taxonomy_admin_form_submit_rebuild'),
@@ -132,17 +187,21 @@ function rsc_taxonomy_admin_form() {
 
   }
 
-  $form['actions']['save'] = array(
-    '#type'   => 'submit',
-    '#value'  => t('Save'),
-  );
-
   return $form;
+}
+
+function rsc_taxonomy_validate_npp($element, &$form_state, $form) {
+  if (empty($element['#value']) || !is_numeric($element['#value']) || ((int)$element['#value']) != $element['#value'] || $element['#value'] < 1) {
+    form_error($element, t('This must be an integer greater than 0.'));
+  }
 }
 
 function rsc_taxonomy_admin_form_submit($form, &$form_state) {
   variable_set("rsc_taxonomy_settings", array(
-    'menus_enabled' => $form_state['values']['menus_enabled'],
+    'menus_enabled'     => $form_state['values']['menus_enabled'],
+    'sort_enable_field' => $form_state['values']['sort_enable_field'],
+    'sort_weight_field' => $form_state['values']['sort_weight_field'],
+    'nodes_per_page'    => $form_state['values']['nodes_per_page'],
   ));
 }
 
@@ -214,9 +273,11 @@ function rsc_taxonomy_block_view($delta) {
   if ('menu' == $parts[0]) {
     $vid = (int) ($parts[1]);
 
-    // TODO: check if menu is enabled for this vocabulary
-    if (true) {
+    // Check if menu is enabled for this vocabulary
+    $settings = variable_get("rsc_taxonomy_settings", NULL);
+    if (isset($settings['menus_enabled'][$vid]) && $settings['menus_enabled'][$vid]) {
 
+      // Construct the block
       $block['subject'] = null;
       $modified = variable_get("rsc_taxonomy_menu_modified_$vid", 0);
       $block['content'] = "<div class='content' vid='$vid' modified='$modified'><noscript>This menu requires Javascript.</noscript></div>";

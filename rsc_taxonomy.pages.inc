@@ -13,32 +13,42 @@ function rsc_taxonomy_term_page($term) {
   drupal_add_feed('taxonomy/term/' . $term->tid . '/feed', 'RSS - ' . $term->name);
 
   // TODO: replace this view with rsc_taxonomy_get_menu_markup ?
+  
+  // Load a table of subcategories and number of articles in each
   // TODO: cache subs & nids!!
   $subs = rsc_taxonomy_subs_count(taxonomy_get_tree($term->vid, $term->tid, 1));
-  $fname = variable_get('rsc_taxonomy_sort_enable_field', NULL);
-  $npp = 10; // number of nodes per page TODO: make this configurable
   
+  // Get the module settings
+  $settings = variable_get('rsc_taxonomy_settings', null);
+
   // determine whether this listing should be sorted by weight:
-  $sort = FALSE;
-  if (!empty($fname)) {
-    $items = field_get_items('taxonomy_term', $term, $fname);
+  $sort = false;
+  if (!empty($settings['sort_enable_field'])) {
+    
+    // Get the value of the first item in this field instance for the current term
+    $items = field_get_items('taxonomy_term', $term, $settings['sort_enable_field']);
     if (!empty($items)) {
       $item = array_shift($items);
+      
+      // If the field value evaluates to true, then sorting is enabled.
       if ($item['value']) {
-        $sort = TRUE;
+        $sort = true;
       }
     }
   }
-  
-  $nids = rsc_taxonomy_nids($term->tid, TRUE, $npp, $sort);
 
-  $build = array();
+  // Get a paginated list of node ids
+  $n_nodes_per_page = isset($settings['nodes_per_page']) ? (int) $settings['nodes_per_page'] : 10;
+  $nids = rsc_taxonomy_nids($term->tid, true, $n_nodes_per_page, $sort);
 
-  $view_mode = 'full';
+  // Get the renderable taxonomy term
+  $term_view_mode = 'full';
   $langcode = $GLOBALS['language_content']->language;
-
   // NB Always call this, even if no description, because other modules need hook_taxonomy_term_view_alter and hook_entity_view_alter
-  $term_renderarray = taxonomy_term_view($term, $view_mode, $langcode);
+  $term_renderarray = taxonomy_term_view($term, $term_view_mode, $langcode);
+
+  // start building the page
+  $build = array();
 
   // Add term heading if the term has a description
   if (!empty($term->description)) {
@@ -50,6 +60,7 @@ function rsc_taxonomy_term_page($term) {
     );
   }
 
+  // Add a table of subterms if there are subterms
   if ($subs) {
     $build['subterms'] = array(
       'subterms' => array(
@@ -76,6 +87,8 @@ function rsc_taxonomy_term_page($term) {
       '#weight' => 2
     );
   }
+
+  // Add a list of nodes if there are nodes
   if ($nids) {
     $build['nodes'] = array(
       '#prefix' => '<div class="taxonomy-nodes-wrapper">',
@@ -84,13 +97,16 @@ function rsc_taxonomy_term_page($term) {
       '#weight' => 3
     );
   }
-  if (!($nids || $subs)) { // nothing to see
+
+  // Add a message if there is nothing to see
+  if (!($nids || $subs)) {
     $build['nothing'] = array(
       '#markup' => '<strong>'.t('There is currently no content in this category.').'</strong>',
       '#weight' => 3
     );
   }
 
+  // Put a pager at the top of the page
   $build['pager_top'] = array(
     '#type' => 'container',
     '#attributes' => array(
@@ -102,6 +118,7 @@ function rsc_taxonomy_term_page($term) {
     ),
   );
 
+  // Put a pager at the bottom of the page
   $build['pager_bottom'] = array(
     '#type' => 'container',
     '#attributes' => array(
@@ -118,8 +135,8 @@ function rsc_taxonomy_term_page($term) {
   $term->content = $build;
 
   // Allow modules to make their own additions to the term.
-  module_invoke_all('taxonomy_term_view', $term, $view_mode, $langcode);
-  module_invoke_all('entity_view', $term, 'taxonomy_term', $view_mode, $langcode);
+  module_invoke_all('taxonomy_term_view', $term, $term_view_mode, $langcode);
+  module_invoke_all('entity_view', $term, 'taxonomy_term', $term_view_mode, $langcode);
 
   return $build;
 }
@@ -134,10 +151,10 @@ function rsc_taxonomy_subs_count($terms) {
     }
 
     $art = 0;
-    $art += count(taxonomy_select_nodes($term->tid,FALSE,FALSE)); // get number of articles that fall directly under this term
+    $art += count(taxonomy_select_nodes($term->tid,false,false)); // get number of articles that fall directly under this term
     $subtree = taxonomy_get_tree($term->vid, $term->tid); // get a flat "tree" of subcategories
     foreach($subtree as $subcat) {
-      $art += count(taxonomy_select_nodes($subcat->tid,FALSE,FALSE)); // get number of articles that fall directly under this term
+      $art += count(taxonomy_select_nodes($subcat->tid,false,false)); // get number of articles that fall directly under this term
     }
     if ($art==0) {
       $art = '&ndash;';
@@ -166,11 +183,11 @@ function rsc_taxonomy_subs_count($terms) {
 }
 
 
-function rsc_taxonomy_nids($tid, $pager = TRUE, $limit = FALSE, $weighten_nids = FALSE) {
-  $weightfield = variable_get('rsc_taxonomy_sort_weight_field',NULL);
+function rsc_taxonomy_nids($tid, $pager = true, $limit = false, $weighten_nids = false) {
+  $weightfield = variable_get('rsc_taxonomy_sort_weight_field',null);
   if ($weighten_nids && !empty($weightfield)) {
     //copy-pasted from somewhere. No idea how this works... (yet)
-    if (!variable_get('taxonomy_maintain_index_table', TRUE)) {
+    if (!variable_get('taxonomy_maintain_index_table', true)) {
       return array();
     }
     $query = db_select('taxonomy_index', 't');
@@ -182,12 +199,12 @@ function rsc_taxonomy_nids($tid, $pager = TRUE, $limit = FALSE, $weighten_nids =
       $count_query->addExpression('COUNT(t.nid)');
 
       $query = $query->extend('PagerDefault');
-      if ($limit !== FALSE) {
+      if ($limit !== false) {
         $query = $query->limit($limit);
       }
       $query->setCountQuery($count_query);
     } else {
-      if ($limit !== FALSE) {
+      if ($limit !== false) {
         $query->range(0, $limit);
       }
     }
