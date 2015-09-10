@@ -18,7 +18,7 @@ Drupal.behaviors.rsc_taxonomy = {
       var vid = menu_div.attr("vid");
 
       // Determine the url to load the menu from if necessary
-      var menu_url = Drupal.settings.basePath + "/rsc_taxonomy_menu/" + vid;
+      var menu_url = Drupal.settings.basePath + "rsc_taxonomy_menu/" + vid;
 
       // Determine what we call our stuff in localstorage
       var markup_id = "rsc_taxonomy_menu_markup_" + vid;
@@ -42,29 +42,33 @@ Drupal.behaviors.rsc_taxonomy = {
         var modified = localStorage[modified_id];
 
         if (markup && modified && (menu_div.attr("modified") == modified)) {
-           //alert("cache hit");
+          //console.log("cache hit");
+
+          // add the menu to the DOM
+          menu_div.html(markup);
+
         } else {
-           //alert("cache miss");
+          //console.log("cache miss");
 
           // request the menu from the server using ajax
           $.ajax({
             url: menu_url,
             type: 'get',
             dataType: 'html',
-            async: false,
+            async: true,
             success: function(data) {
               markup = data;
+
+              // save the menu to localstorage for next time
+              localStorage[markup_id] = markup;
+              localStorage[modified_id] = menu_div.attr("modified");
+
+              // add the menu to the DOM
+              menu_div.html(markup);
             }
           });
 
-          // save the menu to localstorage for next time
-          localStorage[markup_id] = markup;
-          localStorage[modified_id] = menu_div.attr("modified");
-
         }
-
-        // add the menu to the DOM
-        menu_div.html(markup);
 
       } else {
         // localstorage is not supported. Just get the menu from the server.
