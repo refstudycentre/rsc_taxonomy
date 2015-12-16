@@ -21,9 +21,9 @@ function rsc_taxonomy_term_page($term) {
   // Get the module settings
   $settings = variable_get('rsc_taxonomy_settings', null);
 
-  // determine whether this listing should be sorted by weight:
-  $sort = false;
-  if (!empty($settings['sort_enable_field'])) {
+  // determine whether this listing should be sorted:
+  $sort_field = null;
+  if (!empty($settings['sort_enable_field']) && !empty($settings['sort_weight_field'])) {
     
     // Get the value of the first item in this field instance for the current term
     $items = field_get_items('taxonomy_term', $term, $settings['sort_enable_field']);
@@ -32,14 +32,14 @@ function rsc_taxonomy_term_page($term) {
       
       // If the field value evaluates to true, then sorting is enabled.
       if ($item['value']) {
-        $sort = true;
+        $sort_field = $settings['sort_weight_field'];
       }
     }
   }
 
   // Get a paginated list of node ids
   $n_nodes_per_page = isset($settings['nodes_per_page']) ? (int) $settings['nodes_per_page'] : 10;
-  $nids = rsc_taxonomy_nids($term->tid, true, $n_nodes_per_page, $sort);
+  $nids = rsc_taxonomy_nids($term->tid, true, $n_nodes_per_page, $sort_field);
 
   // Get the renderable taxonomy term
   $term_view_mode = 'full';
@@ -183,16 +183,16 @@ function rsc_taxonomy_subs_count($terms) {
 }
 
 
-function rsc_taxonomy_nids($tid, $pager = true, $limit = false, $weighten_nids = false) {
-  $weightfield = variable_get('rsc_taxonomy_sort_weight_field',null);
-  if ($weighten_nids && !empty($weightfield)) {
+function rsc_taxonomy_nids($tid, $pager = true, $limit = false, $sort_field = null) {
+
+  if (!empty($sort_field)) {
     //copy-pasted from somewhere. No idea how this works... (yet)
     if (!variable_get('taxonomy_maintain_index_table', true)) {
       return array();
     }
     $query = db_select('taxonomy_index', 't');
     $query->addTag('node_access');
-    $query->leftJoin("field_data_$weightfield", 'w', 't.nid = w.entity_id');
+    $query->leftJoin("field_data_$sort_field", 'w', 't.nid = w.entity_id');
     $query->condition('t.tid', $tid);
     if ($pager) {
       $count_query = clone $query;
@@ -210,7 +210,7 @@ function rsc_taxonomy_nids($tid, $pager = true, $limit = false, $weighten_nids =
     }
     $query->addField('t', 'nid');
     $query->addField('t', 'tid');
-    $query->orderBy("w.{$weightfield}_value");
+    $query->orderBy("w.{$sort_field}_value");
     $nids = $query->execute()->fetchCol();
   } else {
     $nids = taxonomy_select_nodes($tid, $pager, $limit);
